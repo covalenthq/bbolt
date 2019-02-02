@@ -982,6 +982,10 @@ func (db *DB) allocate(txid txid, count int) (*page, error) {
 	return p, nil
 }
 
+func (db *DB) Size() int {
+	return db.filesz
+}
+
 // grow grows the size of the database to the given sz.
 func (db *DB) grow(sz int) error {
 	// Ignore if the new size is less than available file size.
