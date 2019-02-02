@@ -542,7 +542,7 @@ func (tx *Tx) write() error {
 			}
 
 			// Update statistics.
-			tx.stats.Write++
+			tx.stats.Write += sz
 
 			// Exit inner for loop if we've written all the chunks.
 			size -= sz
