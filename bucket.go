@@ -304,6 +304,106 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 	return nil
 }
 
+// MultiPut sets the values for multiple keys in the bucket.
+// If the keys exist then their previous value will be overwritten.
+// Supplied value must remain valid for the life of the transaction.
+// Returns an error if the bucket was created from a read-only transaction,
+// if the key is blank, if the key is too large, or if the value is too large.
+// Assumes that the keys are sorted
+func (b *Bucket) MultiPut(pairs ...[]byte) error {
+	if b.tx.db == nil {
+		return ErrTxClosed
+	} else if !b.Writable() {
+		return ErrTxNotWritable
+	}
+	if len(pairs) == 0 || len(pairs) %2 == 1 {
+		return ErrInvalidArgNumber
+	}
+	// TODO: Check that keys are sorted
+	c := b.Cursor()
+	var k []byte
+	var flags uint32
+	for i := 0; i < len(pairs); i+=2 {
+		key := pairs[i]
+		value := pairs[i+1]
+		if len(key) == 0 {
+			return ErrKeyRequired
+		} else if len(key) > MaxKeySize {
+			return ErrKeyTooLarge
+		} else if int64(len(value)) > MaxValueSize {
+			return ErrValueTooLarge
+		}
+		// Move cursor to correct position.
+		if i == 0 {
+			k, _, flags = c.seek(key)
+		} else {
+			k, _, flags = c.seekTo(key)
+		}
+		// Return an error if there is an existing key with a bucket value.
+		if bytes.Equal(key, k) && (flags&bucketLeafFlag) != 0 {
+			return ErrIncompatibleValue
+		}
+		// Insert into node.
+		key = cloneBytes(key)
+		if value == nil {
+			c.node().del(key)
+		} else {
+			value = cloneBytes(value)
+			c.node().put(key, key, value, 0, 0)
+		}
+	}
+	return nil
+}
+
+func (b *Bucket) MultiGet(pairs ...[]byte) (values [][]byte, err error) {
+	if len(pairs) == 0 || len(pairs) %2 == 1 {
+		return nil, ErrInvalidArgNumber
+	}
+	c := b.Cursor()
+	var k, v []byte
+	var flags uint32
+	values = make([][]byte, len(pairs)/2)
+	for i := 0; i < len(pairs); i+=2 {
+		start := pairs[i]
+		limit := pairs[i+1]
+		if len(start) == 0 {
+			return values, ErrKeyRequired
+		} else if len(limit) == 0 {
+			return values, ErrKeyRequired
+		} else if len(start) > MaxKeySize {
+			return values, ErrKeyTooLarge
+		} else if len(limit) > MaxKeySize {
+			return values, ErrKeyTooLarge
+		}
+		// Move cursor to correct position
+		if i == 0 {
+			k, v, flags = c.seek(start)
+		} else {
+			// It might be that the current cursor position already satisfies
+			if bytes.Compare(k, start) != -1 && bytes.Compare(k, limit) == -1 {
+				values[i/2] = cloneBytes(v)
+				continue
+			}
+			k, v, flags = c.seekTo(start)
+		}
+		// If we ended up after the last element of a page then move to the next one.
+		if ref := &c.stack[len(c.stack)-1]; ref.index >= ref.count() {
+			k, v, flags = c.next()
+		}
+		// Skip bucket value
+		for (flags&bucketLeafFlag) != 0 {
+			k, v, flags = c.next()
+		}
+		if k == nil {
+			break
+		}
+		if bytes.Compare(k, start) != -1 && bytes.Compare(k, limit) == -1 {
+			values[i/2] = cloneBytes(v)
+		}
+	}
+	return values, nil
+}
+
 // Delete removes a key from the bucket.
 // If the key does not exist then nothing is done and a nil error is returned.
 // Returns an error if the bucket was created from a read-only transaction.

@@ -68,4 +68,8 @@ var (
 	// on an existing non-bucket key or when trying to create or delete a
 	// non-bucket key on an existing bucket key.
 	ErrIncompatibleValue = errors.New("incompatible value")
+
+	ErrInvalidArgNumber = errors.New("invalid number of arguments for MultiPut")
+
+	ErrUnsortedKeys = errors.New("keys passed to MultiPut are not in sorted order")
 )
