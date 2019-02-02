@@ -130,6 +130,22 @@ func (c *Cursor) Seek(seek []byte) (key []byte, value []byte) {
 	return k, v
 }
 
+func (c *Cursor) SeekTo(seek []byte) (key []byte, value []byte) {
+	k, v, flags := c.seekTo(seek)
+
+	// If we ended up after the last element of a page then move to the next one.
+	if ref := &c.stack[len(c.stack)-1]; ref.index >= ref.count() {
+		k, v, flags = c.next()
+	}
+
+	if k == nil {
+		return nil, nil
+	} else if (flags & uint32(bucketLeafFlag)) != 0 {
+		return k, nil
+	}
+	return k, v	
+}
+
 // Delete removes the current key/value under the cursor from the bucket.
 // Delete fails if current key/value is a bucket or if the transaction is not writable.
 func (c *Cursor) Delete() error {
@@ -159,6 +175,64 @@ func (c *Cursor) seek(seek []byte) (key []byte, value []byte, flags uint32) {
 	c.search(seek, c.bucket.root)
 
 	// If this is a bucket then return a nil value.
+	return c.keyValue()
+}
+
+// seekTo moves the cursor from the current position to a given key and return it
+// This is different from seek that always start seeking from the root
+func (c *Cursor) seekTo(seek []byte) (key []byte, value[]byte, flags uint32) {
+	_assert(c.bucket.tx.db != nil, "tx closed")
+
+	// Move up the stack until we find the level at which we need to move forward
+	var i int
+	var pageid pgid
+	for i = len(c.stack) - 1; i >= 0; i-- {
+		elem := &c.stack[i]
+		var lastkey []byte
+		if elem.node != nil {
+			n := elem.node
+			pageid = n.pgid
+			if len(n.inodes) > 0 {
+				lastkey = n.inodes[len(n.inodes)-1].key
+			} else {
+				//fmt.Printf("len(n.inodes) == 0 %x\n", seek)
+			}
+		} else {
+			p := elem.page
+			if p.count == 0 {
+				break
+			}
+			pageid = p.id
+			if elem.isLeaf() {
+				lastkey = append(p.keyPrefix(), p.leafPageElement(p.count-1).key()...)
+			} else {
+				lastkey = append(p.keyPrefix(), p.branchPageElement(p.count-1).key()...)
+			}
+		}
+		if bytes.Compare(seek, lastkey) <= 0 {
+			break
+		}
+	}
+
+	// If we've hit the root page then start with the root
+	if i == -1 {
+		i = 0
+		pageid = c.bucket.root
+	}
+
+	// Trim the stack
+	c.stack = c.stack[:i]
+
+	// Now search within the current node or page and descend to the desired node
+	c.search(seek, pageid)
+
+	ref := &c.stack[len(c.stack)-1]
+
+	// If the cursor is pointing to the end of page/node then return nil.
+	if ref.index >= ref.count() {
+		return nil, nil, 0
+	}
+
 	return c.keyValue()
 }
 
