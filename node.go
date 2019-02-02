@@ -39,10 +39,23 @@ func (n *node) minKeys() int {
 // size returns the size of the node after serialization.
 func (n *node) size() int {
 	sz, elsz := pageHeaderSize, n.pageElementSize()
+	var prefix []byte
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
+		if prefix == nil {
+			prefix = item.key
+		} else {
+			l := len(prefix)
+			if len(item.key) < l {
+				l = len(item.key)
+			}
+			var j int
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			prefix = prefix[:j]
+		}
 		sz += elsz + len(item.key) + len(item.value)
 	}
+	sz -= len(prefix)*(len(n.inodes)-1) // Prefix is only included once4
 	return sz
 }
 
@@ -51,10 +64,22 @@ func (n *node) size() int {
 // to know if it fits inside a certain page size.
 func (n *node) sizeLessThan(v int) bool {
 	sz, elsz := pageHeaderSize, n.pageElementSize()
+	var prefix []byte
 	for i := 0; i < len(n.inodes); i++ {
 		item := &n.inodes[i]
+		if prefix == nil {
+			prefix = item.key
+		} else {
+			l := len(prefix)
+			if len(item.key) < l {
+				l = len(item.key)
+			}
+			var j int
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			prefix = prefix[:j]
+		}
 		sz += elsz + len(item.key) + len(item.value)
-		if sz >= v {
+		if sz - len(prefix)*i >= v {
 			return false
 		}
 	}
@@ -162,18 +187,19 @@ func (n *node) read(p *page) {
 	n.pgid = p.id
 	n.isLeaf = ((p.flags & leafPageFlag) != 0)
 	n.inodes = make(inodes, int(p.count))
+	prefix := p.keyPrefix()
 
 	for i := 0; i < int(p.count); i++ {
 		inode := &n.inodes[i]
 		if n.isLeaf {
 			elem := p.leafPageElement(uint16(i))
 			inode.flags = elem.flags
-			inode.key = elem.key()
+			inode.key = append(prefix, elem.key()...)
 			inode.value = elem.value()
 		} else {
 			elem := p.branchPageElement(uint16(i))
 			inode.pgid = elem.pgid
-			inode.key = elem.key()
+			inode.key = append(prefix, elem.key()...)
 		}
 		_assert(len(inode.key) > 0, "read: zero-length inode key")
 	}
@@ -206,8 +232,32 @@ func (n *node) write(p *page) {
 		return
 	}
 
-	// Loop over each item and write it to the page.
+	// Calculate common prefix
+	var prefix []byte
+	for _, item := range n.inodes {
+		if prefix == nil {
+			prefix = item.key
+		} else {
+			l := len(prefix)
+			if len(item.key) < l {
+				l = len(item.key)
+			}
+			var j int
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			prefix = prefix[:j]
+		}
+	}
+	plen := len(prefix)
+	p.prefixpos = uint32(n.pageElementSize()*len(n.inodes))
+	p.prefixsize = uint32(plen)
 	b := (*[maxAllocSize]byte)(unsafe.Pointer(&p.ptr))[n.pageElementSize()*len(n.inodes):]
+	// Write prefix
+	if len(b) < plen {
+		b = (*[maxAllocSize]byte)(unsafe.Pointer(&b[0]))[:]
+	}
+	copy(b[0:], prefix)
+	b = b[plen:]
+	// Loop over each item and write it to the page.
 	for i, item := range n.inodes {
 		_assert(len(item.key) > 0, "write: zero-length inode key")
 
@@ -216,12 +266,12 @@ func (n *node) write(p *page) {
 			elem := p.leafPageElement(uint16(i))
 			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
 			elem.flags = item.flags
-			elem.ksize = uint32(len(item.key))
+			elem.ksize = uint32(len(item.key) - plen)
 			elem.vsize = uint32(len(item.value))
 		} else {
 			elem := p.branchPageElement(uint16(i))
 			elem.pos = uint32(uintptr(unsafe.Pointer(&b[0])) - uintptr(unsafe.Pointer(elem)))
-			elem.ksize = uint32(len(item.key))
+			elem.ksize = uint32(len(item.key) - plen)
 			elem.pgid = item.pgid
 			_assert(elem.pgid != p.id, "write: circular dependency occurred")
 		}
@@ -230,13 +280,13 @@ func (n *node) write(p *page) {
 		// then we need to reallocate the byte array pointer.
 		//
 		// See: https://github.com/boltdb/bolt/pull/335
-		klen, vlen := len(item.key), len(item.value)
+		klen, vlen := len(item.key) - plen, len(item.value)
 		if len(b) < klen+vlen {
 			b = (*[maxAllocSize]byte)(unsafe.Pointer(&b[0]))[:]
 		}
 
 		// Write data for the element to the end of the page.
-		copy(b[0:], item.key)
+		copy(b[0:], item.key[plen:])
 		b = b[klen:]
 		copy(b[0:], item.value)
 		b = b[vlen:]
@@ -315,15 +365,27 @@ func (n *node) splitTwo(pageSize int) (*node, *node) {
 func (n *node) splitIndex(threshold int) (index, sz int) {
 	sz = pageHeaderSize
 
+	var prefix []byte
 	// Loop until we only have the minimum number of keys required for the second page.
 	for i := 0; i < len(n.inodes)-minKeysPerPage; i++ {
 		index = i
 		inode := n.inodes[i]
+		if prefix == nil {
+			prefix = inode.key
+		} else {
+			l := len(prefix)
+			if len(inode.key) < l {
+				l = len(inode.key)
+			}
+			var j int
+			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {}
+			prefix = prefix[:j]
+		}
 		elsize := n.pageElementSize() + len(inode.key) + len(inode.value)
 
 		// If we have at least the minimum number of keys and adding another
 		// node would put us over the threshold then exit and return.
-		if i >= minKeysPerPage && sz+elsize > threshold {
+		if i >= minKeysPerPage && sz+elsize - len(prefix)*i > threshold {
 			break
 		}
 

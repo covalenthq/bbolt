@@ -319,12 +319,30 @@ func (c *Cursor) next() (key []byte, value []byte, flags uint32) {
 
 // search recursively performs a binary search against a given page/node until it finds a given key.
 func (c *Cursor) search(key []byte, pgid pgid) {
-	p, n := c.bucket.pageNode(pgid)
-	if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
-		panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
+	var p *page
+	var n *node
+	var e *elemRef
+	newElement := true
+	l := len(c.stack)
+	if l > 0 {
+		e = &c.stack[l-1]
+		p = e.page
+		n = e.node
+		if p != nil && p.id == pgid {
+			newElement = false
+		} else if n != nil && n.pgid == pgid {
+			newElement = false
+		}
 	}
-	e := elemRef{page: p, node: n}
-	c.stack = append(c.stack, e)
+	if newElement {
+		p, n = c.bucket.pageNode(pgid)
+		if p != nil && (p.flags&(branchPageFlag|leafPageFlag)) == 0 {
+			panic(fmt.Sprintf("invalid page type: %d: %x", p.id, p.flags))
+		}
+
+		e = &elemRef{page: p, node: n}
+		c.stack = append(c.stack, *e)
+	}
 
 	// If we're on a leaf page/node then find the specific node.
 	if e.isLeaf() {
@@ -340,18 +358,13 @@ func (c *Cursor) search(key []byte, pgid pgid) {
 }
 
 func (c *Cursor) searchNode(key []byte, n *node) {
-	var exact bool
-	index := sort.Search(len(n.inodes), func(i int) bool {
-		// TODO(benbjohnson): Optimize this range search. It's a bit hacky right now.
-		// sort.Search() finds the lowest index where f() != -1 but we need the highest index.
-		ret := bytes.Compare(n.inodes[i].key, key)
-		if ret == 0 {
-			exact = true
-		}
-		return ret != -1
+	offset := c.stack[len(c.stack)-1].index
+	count := len(n.inodes) - offset
+	index := offset+(count-1)-sort.Search(count, func(i int) bool {
+		return bytes.Compare(n.inodes[offset+(count-1)-i].key, key) != 1
 	})
-	if !exact && index > 0 {
-		index--
+	if index < offset {
+		index = offset
 	}
 	c.stack[len(c.stack)-1].index = index
 
@@ -362,19 +375,27 @@ func (c *Cursor) searchNode(key []byte, n *node) {
 func (c *Cursor) searchPage(key []byte, p *page) {
 	// Binary search for the correct range.
 	inodes := p.branchPageElements()
-
-	var exact bool
-	index := sort.Search(int(p.count), func(i int) bool {
-		// TODO(benbjohnson): Optimize this range search. It's a bit hacky right now.
-		// sort.Search() finds the lowest index where f() != -1 but we need the highest index.
-		ret := bytes.Compare(inodes[i].key(), key)
-		if ret == 0 {
-			exact = true
-		}
-		return ret != -1
-	})
-	if !exact && index > 0 {
-		index--
+	pagePrefix := p.keyPrefix()
+	keyPrefix := key
+	if len(key) > len(pagePrefix) {
+		keyPrefix = key[:len(pagePrefix)]
+	}
+	offset := c.stack[len(c.stack)-1].index
+	count := int(p.count) - offset
+	var index int
+	switch bytes.Compare(pagePrefix, keyPrefix) {
+	case -1:
+		index = offset+count-1
+	case 1:
+		index = offset-1
+	case 0:
+		shortKey := key[len(pagePrefix):]
+		index = offset+(count-1)-sort.Search(count, func(i int) bool {
+			return bytes.Compare(inodes[offset+(count-1)-i].key(), shortKey) != 1
+		})
+	}
+	if index < offset {
+		index = offset
 	}
 	c.stack[len(c.stack)-1].index = index
 
@@ -386,22 +407,38 @@ func (c *Cursor) searchPage(key []byte, p *page) {
 func (c *Cursor) nsearch(key []byte) {
 	e := &c.stack[len(c.stack)-1]
 	p, n := e.page, e.node
+	offset := e.index
 
 	// If we have a node then search its inodes.
 	if n != nil {
-		index := sort.Search(len(n.inodes), func(i int) bool {
-			return bytes.Compare(n.inodes[i].key, key) != -1
+		count := len(n.inodes) - offset
+		index := sort.Search(count, func(i int) bool {
+			return bytes.Compare(n.inodes[offset+i].key, key) != -1
 		})
-		e.index = index
+		e.index = offset + index
 		return
 	}
 
 	// If we have a page then search its leaf elements.
 	inodes := p.leafPageElements()
-	index := sort.Search(int(p.count), func(i int) bool {
-		return bytes.Compare(inodes[i].key(), key) != -1
-	})
-	e.index = index
+	pagePrefix := p.keyPrefix()
+	keyPrefix := key
+	if len(key) > len(pagePrefix) {
+		keyPrefix = key[:len(pagePrefix)]
+	}
+	switch bytes.Compare(pagePrefix, keyPrefix) {
+	case -1:
+		e.index = int(p.count)
+	case 1:
+		// e.index does not change
+	case 0:
+		shortKey := key[len(pagePrefix):]
+		count := int(p.count) - offset
+		index := sort.Search(count, func(i int) bool {
+			return bytes.Compare(inodes[offset+i].key(), shortKey) != -1
+		})
+		e.index = offset + index
+	}
 }
 
 // keyValue returns the key and value of the current leaf element.
@@ -421,7 +458,7 @@ func (c *Cursor) keyValue() ([]byte, []byte, uint32) {
 
 	// Or retrieve value from page.
 	elem := ref.page.leafPageElement(uint16(ref.index))
-	return elem.key(), elem.value(), elem.flags
+	return append(ref.page.keyPrefix(), elem.key()...), elem.value(), elem.flags
 }
 
 // node returns the node that the cursor is currently positioned on.

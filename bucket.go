@@ -692,12 +692,23 @@ func (b *Bucket) inlineable() bool {
 	// Bucket is not inlineable if it contains subbuckets or if it goes beyond
 	// our threshold for inline bucket size.
 	var size = pageHeaderSize
-	for _, inode := range n.inodes {
+	var prefix []byte
+	for i, inode := range n.inodes {
 		size += leafPageElementSize + len(inode.key) + len(inode.value)
-
+		if prefix == nil {
+			prefix = inode.key
+		} else {
+			l := len(prefix)
+			if len(inode.key) < l {
+				l = len(inode.key)
+			}
+			var j int
+			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {}
+			prefix = prefix[:j]
+		}
 		if inode.flags&bucketLeafFlag != 0 {
 			return false
-		} else if size > b.maxInlineBucketSize() {
+		} else if size - len(prefix)*i > b.maxInlineBucketSize() {
 			return false
 		}
 	}
