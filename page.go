@@ -28,11 +28,13 @@ const (
 type pgid uint64
 
 type page struct {
-	id       pgid
-	flags    uint16
-	count    uint16
-	overflow uint32
-	ptr      uintptr
+	id         pgid
+	flags      uint16
+	count      uint16
+	overflow   uint32
+	prefixpos  uint32
+	prefixsize uint32
+	ptr        uintptr
 }
 
 // typ returns a human readable page type string used for debugging.
@@ -79,6 +81,11 @@ func (p *page) branchPageElements() []branchPageElement {
 		return nil
 	}
 	return ((*[0x7FFFFFF]branchPageElement)(unsafe.Pointer(&p.ptr)))[:]
+}
+
+func (p *page) keyPrefix() []byte {
+	buf := (*[maxAllocSize]byte)(unsafe.Pointer(&p.ptr))
+	return (*[maxAllocSize]byte)(unsafe.Pointer(&buf[p.prefixpos]))[:p.prefixsize:p.prefixsize]
 }
 
 // dump writes n bytes of the page to STDERR as hex output.
