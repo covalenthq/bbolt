@@ -557,7 +557,7 @@ func (tx *Tx) write() error {
 	}
 
 	// Ignore file sync if flag is set on DB.
-	if !tx.db.NoSync || IgnoreNoSync {
+	if (!tx.db.NoSync || IgnoreNoSync) && !tx.db.memOnly {
 		if err := fdatasync(tx.db); err != nil {
 			return err
 		}
@@ -594,7 +594,7 @@ func (tx *Tx) writeMeta() error {
 	if _, err := tx.db.ops.writeAt(buf, int64(p.id)*int64(tx.db.pageSize)); err != nil {
 		return err
 	}
-	if !tx.db.NoSync || IgnoreNoSync {
+	if (!tx.db.NoSync || IgnoreNoSync) && !tx.db.memOnly {
 		if err := fdatasync(tx.db); err != nil {
 			return err
 		}
