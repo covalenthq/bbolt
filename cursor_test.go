@@ -11,7 +11,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	bolt "go.etcd.io/bbolt"
+	bolt "github.com/covalenthq/bbolt"
 )
 
 // Ensure that a cursor can return a reference to the bucket that created it.
