@@ -213,7 +213,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// Open data file and separate sync handler for metadata writes.
 	var err error
 	if !db.memOnly {
-		if db.file, err = db.OpenFile(db.path, flag|os.O_CREATE, mode); err != nil {
+		if db.file, err = db.openFile(path, flag|os.O_CREATE, mode); err != nil {
 			_ = db.close()
 			return nil, err
 		}
@@ -228,7 +228,7 @@ func Open(path string, mode os.FileMode, options *Options) (*DB, error) {
 	// The database file is locked using the shared lock (more than one process may
 	// hold a lock at the same time) otherwise (options.ReadOnly is set).
 	if !db.memOnly {
-		if err := flock(db, mode, !db.readOnly, options.Timeout); err != nil {
+		if err := flock(db, !db.readOnly, options.Timeout); err != nil {
 			_ = db.close()
 			return nil, err
 		}
