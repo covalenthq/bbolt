@@ -121,13 +121,19 @@ func (tx *Tx) DeleteBucket(name []byte) error {
 	return tx.root.DeleteBucket(name)
 }
 
-// ForEach executes a function for each bucket in the root.
+// ForEachBucket executes a function for each bucket in the root.
 // If the provided function returns an error then the iteration is stopped and
 // the error is returned to the caller.
-func (tx *Tx) ForEach(fn func(name []byte, b *Bucket) error) error {
+func (tx *Tx) ForEachBucket(fn func(name []byte, b *Bucket) error) error {
 	return tx.root.ForEach(func(k, v []byte) error {
 		return fn(k, tx.root.Bucket(k))
 	})
+}
+
+// ForEach executes a function for each key/value pair in the root.
+// The root only contains buckets, and so all values passed to the function are nil.
+func (tx *Tx) ForEach(fn func(k, v []byte) error) error {
+	return tx.root.ForEach(fn)
 }
 
 // OnCommit adds a handler function to be executed after the transaction successfully commits.

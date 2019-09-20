@@ -975,7 +975,7 @@ func (cmd *StatsCommand) Run(args ...string) error {
 	return db.View(func(tx *bolt.Tx) error {
 		var s bolt.BucketStats
 		var count int
-		if err := tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+		if err := tx.ForEachBucket(func(name []byte, b *bolt.Bucket) error {
 			if bytes.HasPrefix(name, []byte(prefix)) {
 				s.Add(b.Stats())
 				count += 1
@@ -1109,7 +1109,7 @@ func (cmd *BucketsCommand) Run(args ...string) error {
 
 	// Print buckets.
 	return db.View(func(tx *bolt.Tx) error {
-		return tx.ForEach(func(name []byte, _ *bolt.Bucket) error {
+		return tx.ForEachBucket(func(name []byte, _ *bolt.Bucket) error {
 			fmt.Fprintln(cmd.Stdout, string(name))
 			return nil
 		})
@@ -2089,7 +2089,7 @@ type walkFunc func(keys [][]byte, k, v []byte, seq uint64) error
 // walk walks recursively the bolt database db, calling walkFn for each key it finds.
 func (cmd *CompactCommand) walk(db *bolt.DB, walkFn walkFunc) error {
 	return db.View(func(tx *bolt.Tx) error {
-		return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+		return tx.ForEachBucket(func(name []byte, b *bolt.Bucket) error {
 			return cmd.walkBucket(b, nil, name, nil, b.Sequence(), walkFn)
 		})
 	})

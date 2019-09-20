@@ -492,6 +492,16 @@ func (b *Bucket) ForEach(fn func(k, v []byte) error) error {
 	return nil
 }
 
+// ForEachBucket executes a function for each bucket in this bucket.
+// If the provided function returns an error then the iteration is stopped and
+// the error is returned to the caller.
+func (b *Bucket) ForEachBucket(fn func(name []byte, sb *Bucket) error) error {
+	return b.ForEach(func(k, v []byte) error {
+		return fn(k, b.Bucket(k))
+	})
+}
+
+
 // Stat returns stats on a bucket.
 func (b *Bucket) Stats() BucketStats {
 	var s, subStats BucketStats
@@ -572,6 +582,27 @@ func (b *Bucket) Stats() BucketStats {
 	// Add the stats for all sub-buckets
 	s.Add(subStats)
 	return s
+}
+
+func (b *Bucket) StandaloneSize() (used uint64) {
+	b.forEachPage(func(p *page, depth int) {
+		if (p.flags & leafPageFlag) != 0 {
+			used += uint64(pageHeaderSize)
+
+			if p.count != 0 {
+				used += uint64(leafPageElementSize * int(p.count-1))
+				lastElement := p.leafPageElement(p.count - 1)
+				used += uint64(lastElement.pos + lastElement.ksize + lastElement.vsize)
+			}
+		} else if (p.flags & branchPageFlag) != 0 {
+			used += uint64(pageHeaderSize + (branchPageElementSize * int(p.count-1)))
+
+			lastElement := p.branchPageElement(p.count - 1)
+			used += uint64(lastElement.pos + lastElement.ksize)
+		}
+	})
+
+	return
 }
 
 // forEachPage iterates over every page in a bucket, including inline pages.
