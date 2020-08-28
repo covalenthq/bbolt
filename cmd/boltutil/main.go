@@ -286,7 +286,7 @@ func navigateToLocation(txHandle *bolt.Tx, path string) (*bolt.Location, error) 
 		keyPath = keyPath[:len(keyPath)-1]
 	}
 
-	bish := bolt.Bucketish(bolt.NewRootBucket(txHandle))
+	bish := bolt.Bucketish(txHandle)
 	for _, childKey := range keyPath {
 		bish = bish.Bucket([]byte(childKey))
 		if b, ok := bish.(*bolt.Bucket); !ok || b == nil {
@@ -329,7 +329,7 @@ func getKey(env *commandEnvironment) error {
 		if v, ok := something.([]byte); ok && v != nil {
 			fmt.Printf("%#x\n", v)
 			return nil
-		} else if rb, ok := something.(*bolt.RootBucket); ok && rb != nil {
+		} else if rb, ok := something.(*bolt.Tx); ok && rb != nil {
 			return ErrKeyIsBucket
 		} else if b, ok := something.(*bolt.Bucket); ok && b != nil {
 			return ErrKeyIsBucket
@@ -374,7 +374,7 @@ func removeKey(env *commandEnvironment) error {
 	return resolveBoltURI(env, env.args[0], true, func(loc *bolt.Location) error {
 		something := loc.ResolveHere()
 
-		if rb, ok := something.(*bolt.RootBucket); ok && rb != nil {
+		if rb, ok := something.(*bolt.Tx); ok && rb != nil {
 			return ErrBucketIsRoot
 		} else if b, ok := something.(*bolt.Bucket); ok && b != nil {
 			if !(bucketIsEmpty(b) || recurse) {
@@ -451,7 +451,7 @@ func listKeys(env *commandEnvironment) error {
 		if b, ok := something.(*bolt.Bucket); ok && b != nil {
 			fmt.Printf("[is a bucket]\n")
 			listKeysOf = b
-		} else if rb, ok := something.(*bolt.RootBucket); ok && rb != nil {
+		} else if rb, ok := something.(*bolt.Tx); ok && rb != nil {
 			fmt.Printf("[is a root bucket]\n")
 			listKeysOf = rb
 		} else if v, ok := something.([]byte); ok && v != nil {
@@ -494,7 +494,7 @@ func printBucketTree(env *commandEnvironment) (err error) {
 
 		if b, ok := something.(*bolt.Bucket); ok && b != nil {
 			bish = b
-		} else if rb, ok := something.(*bolt.RootBucket); ok && rb != nil {
+		} else if rb, ok := something.(*bolt.Tx); ok && rb != nil {
 			bish = rb
 		} else {
 			return ErrBucketNotFound
@@ -535,7 +535,7 @@ func diskUsage(env *commandEnvironment) error {
 
 		if b, ok := something.(*bolt.Bucket); ok && b != nil {
 			bish = b
-		} else if rb, ok := something.(*bolt.RootBucket); ok && rb != nil {
+		} else if rb, ok := something.(*bolt.Tx); ok && rb != nil {
 			bish = rb
 		} else {
 			return ErrBucketNotFound

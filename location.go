@@ -33,35 +33,50 @@ func (loc *Location) ResolveHere() interface{} {
 }
 
 func (loc *Location) GetHere() []byte {
-	if loc.childKey != nil {
-		return loc.parent.Get(loc.childKey)
+	if loc.childKey == nil {
+		return nil
 	}
 
-	return nil
+	locBucket, ok := loc.parent.(*Bucket)
+	if !ok {
+		return nil
+	}
+
+	return locBucket.Get(loc.childKey)
 }
 
 func (loc *Location) PutHere(value []byte) error {
-	if loc.childKey != nil {
-		return loc.parent.Put(loc.childKey, value)
+	if loc.childKey == nil {
+		return ErrIncompatibleValue
 	}
 
-	return ErrIncompatibleValue
+	locBucket, ok := loc.parent.(*Bucket)
+	if !ok {
+		return ErrIncompatibleValue
+	}
+
+	return locBucket.Put(loc.childKey, value)
 }
 
 func (loc *Location) DeleteHere() error {
-	if loc.childKey != nil {
-		return loc.parent.Delete(loc.childKey)
+	if loc.childKey == nil {
+		return ErrIncompatibleValue
 	}
 
-	return ErrIncompatibleValue
+	locBucket, ok := loc.parent.(*Bucket)
+	if !ok {
+		return ErrIncompatibleValue
+	}
+
+	return locBucket.Delete(loc.childKey)
 }
 
 func (loc *Location) BucketishHere() Bucketish {
-	if loc.childKey != nil {
-		return loc.parent.Bucket(loc.childKey)
+	if loc.childKey == nil {
+		return loc.parent
 	}
 
-	return loc.parent
+	return loc.parent.Bucket(loc.childKey)
 }
 
 func (loc *Location) BucketHere() *Bucket {
@@ -69,23 +84,25 @@ func (loc *Location) BucketHere() *Bucket {
 		return loc.parent.Bucket(loc.childKey)
 	}
 
-	if b, ok := loc.parent.(*Bucket); ok && b != nil {
-		return b
+	locBucket, ok := loc.parent.(*Bucket)
+	if !ok {
+		return nil
 	}
 
-	return nil
+	return locBucket
 }
 
-func (loc *Location) RootBucketHere() *RootBucket {
+func (loc *Location) RootBucketHere() *Tx {
 	if loc.childKey != nil {
 		return nil
 	}
 
-	if rb, ok := loc.parent.(*RootBucket); ok && rb != nil {
-		return rb
+	rb, ok := loc.parent.(*Tx)
+	if !ok {
+		return nil
 	}
 
-	return nil
+	return rb
 }
 
 func (loc *Location) CreateBucketHere() (*Bucket, error) {
