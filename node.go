@@ -50,12 +50,13 @@ func (n *node) size() int {
 				l = len(item.key)
 			}
 			var j int
-			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {
+			}
 			prefix = prefix[:j]
 		}
 		sz += elsz + len(item.key) + len(item.value)
 	}
-	sz -= len(prefix)*(len(n.inodes)-1) // Prefix is only included once4
+	sz -= len(prefix) * (len(n.inodes) - 1) // Prefix is only included once4
 	return sz
 }
 
@@ -75,11 +76,12 @@ func (n *node) sizeLessThan(v int) bool {
 				l = len(item.key)
 			}
 			var j int
-			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {
+			}
 			prefix = prefix[:j]
 		}
 		sz += elsz + len(item.key) + len(item.value)
-		if sz - len(prefix)*i >= v {
+		if sz-len(prefix)*i >= v {
 			return false
 		}
 	}
@@ -243,12 +245,13 @@ func (n *node) write(p *page) {
 				l = len(item.key)
 			}
 			var j int
-			for j = 0; j < l && prefix[j] == item.key[j]; j++ {}
+			for j = 0; j < l && prefix[j] == item.key[j]; j++ {
+			}
 			prefix = prefix[:j]
 		}
 	}
 	plen := len(prefix)
-	p.prefixpos = uint32(n.pageElementSize()*len(n.inodes))
+	p.prefixpos = uint32(n.pageElementSize() * len(n.inodes))
 	p.prefixsize = uint32(plen)
 	b := (*[maxAllocSize]byte)(unsafe.Pointer(&p.ptr))[n.pageElementSize()*len(n.inodes):]
 	// Write prefix
@@ -280,7 +283,7 @@ func (n *node) write(p *page) {
 		// then we need to reallocate the byte array pointer.
 		//
 		// See: https://github.com/boltdb/bolt/pull/335
-		klen, vlen := len(item.key) - plen, len(item.value)
+		klen, vlen := len(item.key)-plen, len(item.value)
 		if len(b) < klen+vlen {
 			b = (*[maxAllocSize]byte)(unsafe.Pointer(&b[0]))[:]
 		}
@@ -378,14 +381,15 @@ func (n *node) splitIndex(threshold int) (index, sz int) {
 				l = len(inode.key)
 			}
 			var j int
-			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {}
+			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {
+			}
 			prefix = prefix[:j]
 		}
 		elsize := n.pageElementSize() + len(inode.key) + len(inode.value)
 
 		// If we have at least the minimum number of keys and adding another
 		// node would put us over the threshold then exit and return.
-		if i >= minKeysPerPage && sz+elsize - len(prefix)*i > threshold {
+		if i >= minKeysPerPage && sz+elsize-len(prefix)*i > threshold {
 			break
 		}
 
@@ -649,9 +653,11 @@ func (n *node) dump() {
 
 type nodes []*node
 
-func (s nodes) Len() int           { return len(s) }
-func (s nodes) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s nodes) Less(i, j int) bool { return bytes.Compare(s[i].inodes[0].key, s[j].inodes[0].key) == -1 }
+func (s nodes) Len() int      { return len(s) }
+func (s nodes) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s nodes) Less(i, j int) bool {
+	return bytes.Compare(s[i].inodes[0].key, s[j].inodes[0].key) == -1
+}
 
 // inode represents an internal node inside of a node.
 // It can be used to point to elements in a page or point

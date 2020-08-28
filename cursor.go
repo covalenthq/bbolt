@@ -143,7 +143,7 @@ func (c *Cursor) SeekTo(seek []byte) (key []byte, value []byte) {
 	} else if (flags & uint32(bucketLeafFlag)) != 0 {
 		return k, nil
 	}
-	return k, v	
+	return k, v
 }
 
 // Delete removes the current key/value under the cursor from the bucket.
@@ -180,7 +180,7 @@ func (c *Cursor) seek(seek []byte) (key []byte, value []byte, flags uint32) {
 
 // seekTo moves the cursor from the current position to a given key and return it
 // This is different from seek that always start seeking from the root
-func (c *Cursor) seekTo(seek []byte) (key []byte, value[]byte, flags uint32) {
+func (c *Cursor) seekTo(seek []byte) (key []byte, value []byte, flags uint32) {
 	_assert(c.bucket.tx.db != nil, "tx closed")
 
 	// Move up the stack until we find the level at which we need to move forward
@@ -360,7 +360,7 @@ func (c *Cursor) search(key []byte, pgid pgid) {
 func (c *Cursor) searchNode(key []byte, n *node) {
 	offset := c.stack[len(c.stack)-1].index
 	count := len(n.inodes) - offset
-	index := offset+(count-1)-sort.Search(count, func(i int) bool {
+	index := offset + (count - 1) - sort.Search(count, func(i int) bool {
 		return bytes.Compare(n.inodes[offset+(count-1)-i].key, key) != 1
 	})
 	if index < offset {
@@ -385,12 +385,12 @@ func (c *Cursor) searchPage(key []byte, p *page) {
 	var index int
 	switch bytes.Compare(pagePrefix, keyPrefix) {
 	case -1:
-		index = offset+count-1
+		index = offset + count - 1
 	case 1:
-		index = offset-1
+		index = offset - 1
 	case 0:
 		shortKey := key[len(pagePrefix):]
-		index = offset+(count-1)-sort.Search(count, func(i int) bool {
+		index = offset + (count - 1) - sort.Search(count, func(i int) bool {
 			return bytes.Compare(inodes[offset+(count-1)-i].key(), shortKey) != 1
 		})
 	}

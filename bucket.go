@@ -316,14 +316,14 @@ func (b *Bucket) MultiPut(pairs ...[]byte) error {
 	} else if !b.Writable() {
 		return ErrTxNotWritable
 	}
-	if len(pairs) == 0 || len(pairs) %2 == 1 {
+	if len(pairs) == 0 || len(pairs)%2 == 1 {
 		return ErrInvalidArgNumber
 	}
 	// TODO: Check that keys are sorted
 	c := b.Cursor()
 	var k []byte
 	var flags uint32
-	for i := 0; i < len(pairs); i+=2 {
+	for i := 0; i < len(pairs); i += 2 {
 		key := pairs[i]
 		value := pairs[i+1]
 		if len(key) == 0 {
@@ -356,14 +356,14 @@ func (b *Bucket) MultiPut(pairs ...[]byte) error {
 }
 
 func (b *Bucket) MultiGet(pairs ...[]byte) (values [][]byte, err error) {
-	if len(pairs) == 0 || len(pairs) %2 == 1 {
+	if len(pairs) == 0 || len(pairs)%2 == 1 {
 		return nil, ErrInvalidArgNumber
 	}
 	c := b.Cursor()
 	var k, v []byte
 	var flags uint32
 	values = make([][]byte, len(pairs)/2)
-	for i := 0; i < len(pairs); i+=2 {
+	for i := 0; i < len(pairs); i += 2 {
 		start := pairs[i]
 		limit := pairs[i+1]
 		if len(start) == 0 {
@@ -391,7 +391,7 @@ func (b *Bucket) MultiGet(pairs ...[]byte) (values [][]byte, err error) {
 			k, v, flags = c.next()
 		}
 		// Skip bucket value
-		for (flags&bucketLeafFlag) != 0 {
+		for (flags & bucketLeafFlag) != 0 {
 			k, v, flags = c.next()
 		}
 		if k == nil {
@@ -500,7 +500,6 @@ func (b *Bucket) ForEachBucket(fn func(name []byte, sb *Bucket) error) error {
 		return fn(k, b.Bucket(k))
 	})
 }
-
 
 // Stat returns stats on a bucket.
 func (b *Bucket) Stats() BucketStats {
@@ -734,12 +733,13 @@ func (b *Bucket) inlineable() bool {
 				l = len(inode.key)
 			}
 			var j int
-			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {}
+			for j = 0; j < l && prefix[j] == inode.key[j]; j++ {
+			}
 			prefix = prefix[:j]
 		}
 		if inode.flags&bucketLeafFlag != 0 {
 			return false
-		} else if size - len(prefix)*i > b.maxInlineBucketSize() {
+		} else if size-len(prefix)*i > b.maxInlineBucketSize() {
 			return false
 		}
 	}
