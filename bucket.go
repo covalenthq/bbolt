@@ -310,46 +310,67 @@ func (b *Bucket) Put(key []byte, value []byte) error {
 // Returns an error if the bucket was created from a read-only transaction,
 // if the key is blank, if the key is too large, or if the value is too large.
 // Assumes that the keys are sorted
-func (b *Bucket) MultiPut(pairs ...[]byte) error {
+func (b *Bucket) MultiPut(unpackedPairs ...[]byte) error {
 	if b.tx.db == nil {
 		return ErrTxClosed
 	} else if !b.Writable() {
 		return ErrTxNotWritable
 	}
-	if len(pairs) == 0 || len(pairs)%2 == 1 {
+	if len(unpackedPairs) == 0 || len(unpackedPairs)%2 == 1 {
 		return ErrInvalidArgNumber
 	}
-	// TODO: Check that keys are sorted
+
+	pairs := make([]WritePair, 0, len(unpackedPairs)/2)
+	for i := 0; i < len(unpackedPairs); i += 2 {
+		pairs = append(pairs, WritablePair(unpackedPairs[i], unpackedPairs[i+1]))
+	}
+
+	return b.WritePairs(pairs)
+}
+
+// WritePairs works as MultiPut, but accepts structured WritePair structs.
+func (b *Bucket) WritePairs(pairs []WritePair) error {
+	if b.tx.db == nil {
+		return ErrTxClosed
+	} else if !b.Writable() {
+		return ErrTxNotWritable
+	}
+	if len(pairs) == 0 {
+		return ErrInvalidArgNumber
+	}
+
+	return b.WritePairs(pairs)
+}
+
+func (b *Bucket) writePairs(pairs []WritePair) error {
 	c := b.Cursor()
 	var k []byte
 	var flags uint32
-	for i := 0; i < len(pairs); i += 2 {
-		key := pairs[i]
-		value := pairs[i+1]
-		if len(key) == 0 {
+	var didFirst bool
+	for _, pair := range pairs {
+		if len(pair.key) == 0 {
 			return ErrKeyRequired
-		} else if len(key) > MaxKeySize {
+		} else if len(pair.key) > MaxKeySize {
 			return ErrKeyTooLarge
-		} else if int64(len(value)) > MaxValueSize {
+		} else if int64(len(pair.value)) > MaxValueSize {
 			return ErrValueTooLarge
 		}
 		// Move cursor to correct position.
-		if i == 0 {
-			k, _, flags = c.seek(key)
+		if !didFirst {
+			k, _, flags = c.seek(pair.key)
+			didFirst = true
 		} else {
-			k, _, flags = c.seekTo(key)
+			k, _, flags = c.seekTo(pair.key)
 		}
 		// Return an error if there is an existing key with a bucket value.
-		if bytes.Equal(key, k) && (flags&bucketLeafFlag) != 0 {
+		if bytes.Equal(pair.key, k) && (flags&bucketLeafFlag) != 0 {
 			return ErrIncompatibleValue
 		}
-		// Insert into node.
-		key = cloneBytes(key)
-		if value == nil {
-			c.node().del(key)
+		// Insert into node. key and value are already cloned
+		if pair.value == nil {
+			c.node().del(pair.key)
 		} else {
-			value = cloneBytes(value)
-			c.node().put(key, key, value, 0, 0)
+			c.node().put(pair.key, pair.key, pair.value, 0, 0)
 		}
 	}
 	return nil
