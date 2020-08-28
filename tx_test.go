@@ -441,7 +441,7 @@ func TestTx_DeleteBucket_NotFound(t *testing.T) {
 
 // Ensure that no error is returned when a tx.ForEach function does not return
 // an error.
-func TestTx_ForEach_NoError(t *testing.T) {
+func TestTx_ForEachBucket_NoError(t *testing.T) {
 	db := MustOpenDB()
 	defer db.MustClose()
 	if err := db.Update(func(tx *bolt.Tx) error {
@@ -453,7 +453,7 @@ func TestTx_ForEach_NoError(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+		if err := tx.ForEachBucket(func(name []byte, b *bolt.Bucket) error {
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -465,7 +465,7 @@ func TestTx_ForEach_NoError(t *testing.T) {
 }
 
 // Ensure that an error is returned when a tx.ForEach function returns an error.
-func TestTx_ForEach_WithError(t *testing.T) {
+func TestTx_ForEachBucket_WithError(t *testing.T) {
 	db := MustOpenDB()
 	defer db.MustClose()
 	if err := db.Update(func(tx *bolt.Tx) error {
@@ -478,7 +478,7 @@ func TestTx_ForEach_WithError(t *testing.T) {
 		}
 
 		marker := errors.New("marker")
-		if err := tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+		if err := tx.ForEachBucket(func(name []byte, b *bolt.Bucket) error {
 			return marker
 		}); err != marker {
 			t.Fatalf("unexpected error: %s", err)
