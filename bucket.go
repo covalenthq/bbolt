@@ -118,6 +118,22 @@ func (b *Bucket) Bucket(name []byte) *Bucket {
 	return child
 }
 
+func (b *Bucket) bucketFromCursorValue(name []byte, v []byte) *Bucket {
+	if b.buckets != nil {
+		if child := b.buckets[string(name)]; child != nil {
+			return child
+		}
+	}
+
+	// Otherwise create a bucket and cache it.
+	var child = b.openBucket(v)
+	if b.buckets != nil {
+		b.buckets[string(name)] = child
+	}
+
+	return child
+}
+
 // Helper method that re-interprets a sub-bucket value
 // from a parent into a Bucket
 func (b *Bucket) openBucket(value []byte) *Bucket {
@@ -205,28 +221,8 @@ func (b *Bucket) CreateBucketIfNotExists(key []byte) (*Bucket, error) {
 	return child, nil
 }
 
-// DeleteBucket deletes a bucket at the given key.
-// Returns an error if the bucket does not exists, or if the key represents a non-bucket value.
-func (b *Bucket) DeleteBucket(key []byte) error {
-	if b.tx.db == nil {
-		return ErrTxClosed
-	} else if !b.Writable() {
-		return ErrTxNotWritable
-	}
-
-	// Move cursor to correct position.
-	c := b.Cursor()
-	k, _, flags := c.seek(key)
-
-	// Return an error if bucket doesn't exist or is not a bucket.
-	if !bytes.Equal(key, k) {
-		return ErrBucketNotFound
-	} else if (flags & bucketLeafFlag) == 0 {
-		return ErrIncompatibleValue
-	}
-
+func (b *Bucket) deleteSelectedBucket(key []byte, child *Bucket) error {
 	// Recursively delete all child buckets.
-	child := b.Bucket(key)
 	err := child.ForEach(func(k, v []byte) error {
 		if v == nil {
 			if err := child.DeleteBucket(k); err != nil {
@@ -247,10 +243,37 @@ func (b *Bucket) DeleteBucket(key []byte) error {
 	child.rootNode = nil
 	child.free()
 
-	// Delete the node if we have a matching key.
-	c.node().del(key)
-
 	return nil
+}
+
+// DeleteBucket deletes a bucket at the given key.
+// Returns an error if the bucket does not exists, or if the key represents a non-bucket value.
+func (b *Bucket) DeleteBucket(key []byte) error {
+	if b.tx.db == nil {
+		return ErrTxClosed
+	} else if !b.Writable() {
+		return ErrTxNotWritable
+	}
+
+	// Move cursor to correct position.
+	c := b.Cursor()
+	k, v, flags := c.seek(key)
+
+	// Return an error if bucket doesn't exist or is not a bucket.
+	if !bytes.Equal(key, k) {
+		return ErrBucketNotFound
+	} else if (flags & bucketLeafFlag) == 0 {
+		return ErrIncompatibleValue
+	}
+
+	child := b.bucketFromCursorValue(k, v)
+
+	err := b.deleteSelectedBucket(k, child)
+	if err == nil {
+		// Delete the node if we have a matching key.
+		c.node().del(key)
+	}
+	return err
 }
 
 // Get retrieves the value for a key in the bucket.
